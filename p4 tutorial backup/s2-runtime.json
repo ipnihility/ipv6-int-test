@@ -1,0 +1,81 @@
+{
+  "target": "bmv2",
+  "p4info": "build/test.p4info",
+  "bmv2_json": "build/test.json",
+  "table_entries": [
+    {
+      "table": "MyEgress.swtrace",
+      "default_action": true,
+      "action_name": "MyEgress.swtrace_prepare",
+      "action_params": {
+         "swid": 2
+       }
+    },
+    {
+      "table": "MyIngress.ipv6_lpm",
+      "match": {
+        "meta.ipv6_prefix": ["32.1.0.1", 32]
+      },
+      "action_name": "MyIngress.ipv6_forward",
+      "action_params": {
+        "dstAddr": "00:00:00:00:01:01",
+        "port": 1
+      }
+    },
+    {
+      "table": "MyIngress.ipv6_lpm",
+      "match": {
+        "meta.ipv6_prefix": ["32.1.0.2", 32]
+      },
+      "action_name": "MyIngress.ipv6_forward",
+      "action_params": {
+        "dstAddr": "00:00:00:00:02:02",
+        "port": 1
+      }
+    },
+    {
+      "table": "MyIngress.ipv6_lpm",
+      "match": {
+        "meta.ipv6_prefix": ["32.1.0.3", 32]
+      },
+      "action_name": "MyIngress.ipv6_forward",
+      "action_params": {
+        "dstAddr": "00:00:00:00:03:03",
+        "port": 1
+      }
+    },
+    {
+      "table": "MyIngress.ipv6_lpm",
+      "match": {
+        "meta.ipv6_prefix": ["32.1.0.4", 32]
+      },
+      "action_name": "MyIngress.ipv6_forward",
+      "action_params": {
+        "dstAddr": "00:00:00:00:04:04",
+        "port": 1
+      }
+    },
+    {
+      "table": "MyIngress.ipv6_lpm",
+      "match": {
+        "meta.ipv6_prefix": ["32.1.0.5", 32]
+      },
+      "action_name": "MyIngress.ipv6_forward",
+      "action_params": {
+        "dstAddr": "00:00:00:00:05:05",
+        "port": 2
+      }
+    },
+    {
+      "table": "MyIngress.ipv6_lpm",
+      "match": {
+        "meta.ipv6_prefix": ["32.1.0.6", 32]
+      },
+      "action_name": "MyIngress.ipv6_forward",
+      "action_params": {
+        "dstAddr": "00:00:00:00:06:06",
+        "port": 2
+      }
+    }
+  ]
+}
