@@ -117,17 +117,17 @@ def main():
     
     
     while True:
-        '''with open('flag.txt', 'r') as f:
+        with open('flag.txt', 'r') as f:
             t = float(f.readline())
         if (t != MAX_t):
             p = pkt / Bitmap(bit_label=255, bit_reserve=0) / MRI1(count=0, swtraces=[])
         else:
-            p = pkt / Bitmap(bit_label=228, bit_reserve=0) / MRI2(count=0, swtraces=[])'''
-        p = pkt / Bitmap(bit_label=255, bit_reserve=0) / MRI1(count=0, swtraces=[])
+            p = pkt / Bitmap(bit_label=228, bit_reserve=0) / MRI2(count=0, swtraces=[])
+        #p = pkt / Bitmap(bit_label=255, bit_reserve=0) / MRI1(count=0, swtraces=[])
         p.show2()
         sendp(p, iface=iface, verbose=False)
-        #sleep(t)
-        sleep(1)
+        sleep(t)
+        #sleep(1)
 
 
 if __name__ == '__main__':

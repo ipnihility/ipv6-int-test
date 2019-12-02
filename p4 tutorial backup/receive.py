@@ -17,8 +17,8 @@ sx_lan = [0, 0]
 sx_flag = 0
 t = 1
 MIN_t = 0.2
-MAX_t = 1
-MAX_T = 5
+MAX_t = 1.0
+MAX_T = 5.0
 t0 = time.time()
 
 """
