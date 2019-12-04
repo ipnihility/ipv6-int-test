@@ -12,6 +12,16 @@
        }
     },
     {
+      "table": "MyIngress.ndp_reply_table",
+      "match": {
+        "meta.ndp_ipv6_suffix": ["0.0.0.255", 32]
+      },
+      "action_name": "MyIngress.ndp_ns_to_na",
+      "action_params": {
+        "target_mac": "aa:00:00:00:00:01"
+      }
+    },
+    {
       "table": "MyIngress.ipv6_lpm",
       "match": {
         "meta.ipv6_prefix": ["32.1.0.1", 32]

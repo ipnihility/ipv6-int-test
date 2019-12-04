@@ -14,6 +14,15 @@ const bit<8> PROTO_SRV6 = 43;
 const bit<8> PROTO_ICMPV6 = 58;
 const bit<8> MRI_PROTOCOL = 150;
 
+const bit<8> ICMP6_TYPE_NS = 135;
+const bit<8> ICMP6_TYPE_NA = 136;
+const bit<8> NDP_OPT_TARGET_LL_ADDR = 2;
+const bit<48> IPV6_MCAST_01 = 0x33_33_00_00_00_01;
+const bit<32> NDP_FLAG_ROUTER = 0x80000000;
+const bit<32> NDP_FLAG_SOLICITED = 0x40000000;
+const bit<32> NDP_FLAG_OVERRIDE = 0x20000000;
+
+const bit<128> NDP_PREFIX = 0x0000_0000_0000_0000_0000_0000_0000_00ff;
 const bit<32> MAX_PORT = 1 << 8;
 
 #define MAX_HOPS 9
@@ -87,17 +96,47 @@ header switch2_t {
 	qdepth_t             out_qdepth;
 	ingress_timestamp_t  in_time;
 	egress_timestamp_t   out_time;
-	deq_timedelta_t        queue_time;
+	deq_timedelta_t      queue_time;
 }
 
-/*
+header tcp_t {
+    bit<16> src_port;
+    bit<16> dst_port;
+    bit<32> seq_no;
+    bit<32> ack_no;
+    bit<4>  data_offset;
+    bit<3>  res;
+    bit<3>  ecn;
+    bit<6>  ctrl;
+    bit<16> window;
+    bit<16> checksum;
+    bit<16> urgent_ptr;
+}
+
 header udp_t {
     bit<16>   sport;
     bit<16>   dport;
     bit<16>   len;
     bit<16>   hdrChecksum;
 }
-*/
+
+header icmpv6_t {
+    bit<8> type;
+    bit<8> code;
+    bit<16> checksum;
+}
+
+header ndp_t {
+    bit<32> flags;
+    bit<128> target_addr;
+}
+
+header ndp_option_t {
+    bit<8> type;
+    bit<8> length;
+    bit<48> value;
+}
+
 
 struct flow_metadata_t {
     bit<32>              ingress_pkt_cnt;
@@ -109,20 +148,26 @@ struct flow_metadata_t {
 }
 
 struct metadata {
-    switchID_t swid;
-    bit<32> ipv6_prefix;
-    bit<16> remaining;
-    flow_metadata_t flow_metadata;
+    switchID_t        swid;
+    bit<32>           ipv6_prefix;
+    bit<32>           ndp_ipv6_suffix;
+    bit<16>           remaining;
+    flow_metadata_t   flow_metadata;
 }
 
 struct headers {
-    ethernet_t            ethernet;
-    srcRoute_t[MAX_HOPS]  srcRoutes;
-    ipv6_t                ipv6;
+    ethernet_t             ethernet;
+    srcRoute_t[MAX_HOPS]   srcRoutes;
+    ipv6_t                 ipv6;
     bitmap_t               bitmap;
     int_count_t            int_count;
     switch1_t[MAX_HOPS]    swtraces1;
     switch2_t[MAX_HOPS]    swtraces2;
+    tcp_t                  tcp;
+    udp_t                  udp;
+    icmpv6_t               icmpv6;
+    ndp_t                  ndp;
+    ndp_option_t           ndp_option;
 }
 
 error { IPHeaderTooShort }
@@ -161,8 +206,29 @@ parser MyParser(packet_in packet,
         packet.extract(hdr.ipv6);
         transition select(hdr.ipv6.nextHdr) {
             MRI_PROTOCOL: parse_bitmap;
+            PROTO_ICMPV6: parse_icmpv6;
             default: accept;
         }
+    }
+
+    state parse_icmpv6 {
+        packet.extract(hdr.icmpv6);
+        //local_metadata.icmp_type = hdr.icmpv6.type;
+        transition select(hdr.icmpv6.type) {
+            ICMP6_TYPE_NS: parse_ndp;
+            ICMP6_TYPE_NA: parse_ndp;
+            default: accept;
+        }
+    }
+
+    state parse_ndp {
+        packet.extract(hdr.ndp);
+        transition parse_ndp_option;
+    }
+
+    state parse_ndp_option {
+        packet.extract(hdr.ndp_option);
+        transition accept;
     }
 
     state parse_bitmap {
@@ -233,9 +299,44 @@ control MyIngress(inout headers hdr,
         mark_to_drop();
     }
 
-    action prepare() {
+    action ipv6_lpm_prepare() {
         meta.ipv6_prefix = (bit<32>)(hdr.ipv6.dstAddr >> 96);
     }
+
+    action ndp_prepare() {
+        meta.ndp_ipv6_suffix = (bit<32>)hdr.ndp.target_addr;
+    }
+
+    action ndp_ns_to_na(macAddr_t target_mac) {
+        hdr.ethernet.dstAddr = hdr.ethernet.srcAddr;
+        hdr.ethernet.srcAddr = target_mac;
+        //hdr.ethernet.dstAddr = IPV6_MCAST_01;
+        bit<128> host_ipv6_tmp = hdr.ipv6.srcAddr;
+        hdr.ipv6.srcAddr = hdr.ndp.target_addr;
+        hdr.ipv6.dstAddr = host_ipv6_tmp;
+        hdr.icmpv6.type = ICMP6_TYPE_NA;
+        hdr.ndp.flags = NDP_FLAG_ROUTER | NDP_FLAG_OVERRIDE;
+        hdr.ndp_option.setValid();
+        hdr.ndp_option.type = NDP_OPT_TARGET_LL_ADDR;
+        hdr.ndp_option.length = 1;
+        hdr.ndp_option.value = target_mac;
+        hdr.ipv6.nextHdr = PROTO_ICMPV6;
+        standard_metadata.egress_spec = standard_metadata.ingress_port;
+        //local_metadata.skip_l2 = true;
+    }
+
+    table ndp_reply_table {
+        key = {
+            meta.ndp_ipv6_suffix: lpm;
+        }
+        actions = {
+            ndp_ns_to_na;
+            NoAction;
+        }
+        size = 1024;
+        default_action = NoAction();
+    }
+
 
     action ipv6_forward(macAddr_t dstAddr, egressSpec_t port) {
         standard_metadata.egress_spec = port;
@@ -271,7 +372,6 @@ control MyIngress(inout headers hdr,
     }
     
     apply {
-        prepare();
         if (hdr.srcRoutes[0].isValid()) {
             if (hdr.srcRoutes[0].bos == 1){
                 srcRoute_finish();
@@ -279,7 +379,12 @@ control MyIngress(inout headers hdr,
             srcRoute_nhop();
             update_ipv6_ttl();
         }
+        else if(hdr.icmpv6.isValid() && hdr.icmpv6.type == ICMP6_TYPE_NS) {
+            ndp_prepare();
+            ndp_reply_table.apply();
+        }
         else if (hdr.ipv6.isValid()) {
+            ipv6_lpm_prepare();
             ipv6_lpm.apply();
         }
     }
@@ -365,6 +470,24 @@ control MyEgress(inout headers hdr,
 
 control MyComputeChecksum(inout headers hdr, inout metadata meta) {
      apply {
+        update_checksum(hdr.ndp.isValid(),
+            {
+                hdr.ipv6.srcAddr,
+                hdr.ipv6.dstAddr,
+                hdr.ipv6.payLoadLen,
+                8w0,
+                hdr.ipv6.nextHdr,
+                hdr.icmpv6.type,
+                hdr.icmpv6.code,
+                hdr.ndp.flags,
+                hdr.ndp.target_addr,
+                hdr.ndp_option.type,
+                hdr.ndp_option.length,
+                hdr.ndp_option.value
+            },
+            hdr.icmpv6.checksum,
+            HashAlgorithm.csum16
+        );
     }
 }
 
@@ -381,6 +504,11 @@ control MyDeparser(packet_out packet, in headers hdr) {
         packet.emit(hdr.int_count);
         packet.emit(hdr.swtraces1);
         packet.emit(hdr.swtraces2);
+        packet.emit(hdr.tcp);
+        packet.emit(hdr.udp);
+        packet.emit(hdr.icmpv6);
+        packet.emit(hdr.ndp);
+        packet.emit(hdr.ndp_option);
     }
 }
 
